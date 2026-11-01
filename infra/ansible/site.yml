@@ -1,0 +1,67 @@
+---
+- name: Configure Ubuntu host for CloudOps demo
+  hosts: cloudops
+  become: true
+  vars:
+    cloudops_dir: /opt/cloudops
+    cloudops_user: cloudops
+    app_image: cloudops-api:local
+  pre_tasks:
+    - name: Require Ubuntu 22.04 or later
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == 'Ubuntu'
+          - ansible_distribution_major_version | int >= 22
+        fail_msg: This playbook supports Ubuntu 22.04+ only
+  tasks:
+    - name: Install Docker and Python utilities
+      ansible.builtin.apt:
+        name: [docker.io, docker-compose-v2, python3, python3-pip, curl]
+        state: present
+        update_cache: true
+    - name: Ensure Docker service enabled
+      ansible.builtin.service:
+        name: docker
+        enabled: true
+        state: started
+    - name: Create dedicated deployment account
+      ansible.builtin.user:
+        name: "{{ cloudops_user }}"
+        system: true
+        shell: /usr/sbin/nologin
+        create_home: false
+    - name: Create application directory
+      ansible.builtin.file:
+        path: "{{ cloudops_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+    - name: Copy Compose definition
+      ansible.builtin.copy:
+        src: ../../compose.yaml
+        dest: "{{ cloudops_dir }}/compose.yaml"
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Copy runtime configuration directories
+      ansible.builtin.copy:
+        src: "../../infra/{{ item }}/"
+        dest: "{{ cloudops_dir }}/infra/{{ item }}/"
+        owner: root
+        group: root
+        mode: preserve
+      loop: [nginx, prometheus, grafana]
+    - name: Render deployment environment
+      ansible.builtin.template:
+        src: templates/cloudops.env.j2
+        dest: "{{ cloudops_dir }}/.env"
+        mode: '0600'
+        owner: root
+        group: root
+      no_log: true
+    - name: Start platform containers
+      ansible.builtin.command:
+        cmd: docker compose up -d --no-build
+        chdir: "{{ cloudops_dir }}"
+      changed_when: true
