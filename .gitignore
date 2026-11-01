@@ -1,0 +1,11 @@
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.pyc
+.env
+*.log
+infra/ansible/inventory.ini
+infra/ansible/*.retry
+infra/ansible/secrets.yml
+.DS_Store
