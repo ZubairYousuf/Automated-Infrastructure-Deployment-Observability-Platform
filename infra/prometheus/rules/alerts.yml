@@ -1,0 +1,22 @@
+groups:
+  - name: cloudops.rules
+    rules:
+      - alert: ApiDown
+        expr: up{job="cloudops-api"} == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: "CloudOps API is unavailable"
+          description: "Prometheus cannot scrape the API for over one minute."
+      - alert: ApiHigh5xxRate
+        expr: sum(rate(cloudops_http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(cloudops_http_requests_total[5m])), 0.001) > 0.05
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "CloudOps 5xx ratio exceeded 5%"
+      - alert: HighHostMemoryUsage
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.90
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Host memory usage exceeded 90%"
