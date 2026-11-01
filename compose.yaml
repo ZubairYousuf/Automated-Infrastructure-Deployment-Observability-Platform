@@ -1,0 +1,84 @@
+name: cloudops
+services:
+  api:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    image: ${APP_IMAGE:-cloudops-api:local}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    pids_limit: 100
+    mem_limit: 256m
+    cpus: 1.0
+    expose: ["8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready',timeout=2)"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    networks: [backend]
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports: ["8080:8080"]
+    volumes:
+      - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      api: {condition: service_healthy}
+    security_opt: ["no-new-privileges:true"]
+    networks: [backend]
+  prometheus:
+    image: prom/prometheus:v3.3.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    ports: ["127.0.0.1:9090:9090"]
+    depends_on: [api, node-exporter, alertmanager]
+    networks: [backend]
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    restart: unless-stopped
+    command: ["--path.rootfs=/host"]
+    volumes:
+      - /:/host:ro,rslave
+    pid: host
+    networks: [backend]
+  grafana:
+    image: grafana/grafana:11.6.1
+    restart: unless-stopped
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [prometheus]
+    networks: [backend]
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    restart: unless-stopped
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    volumes:
+      - ./infra/prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports: ["127.0.0.1:9093:9093"]
+    networks: [backend]
+networks:
+  backend:
+volumes:
+  prometheus-data:
+  grafana-data:
